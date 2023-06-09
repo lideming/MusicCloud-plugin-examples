@@ -8,7 +8,10 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "rollup -c"
+    "build": "rollup -c",
+    "watch": "rollup -c -w",
+    "serve": "http-server -p 4321 -c-1 dist",
+    "dev": "concurrently npm:watch npm:serve"
   },
   "keywords": [],
   "author": "",
@@ -17,8 +20,10 @@
     "@rollup/plugin-node-resolve": "^15.0.1",
     "@rollup/plugin-sucrase": "^5.0.1",
     "@types/node": "^18.11.18",
-    "@yuuza/mcloud": "^1.0.12",
+    "@yuuza/mcloud": "^1.0.14",
     "@yuuza/webfx": "^1.10.2",
+    "concurrently": "^8.2.0",
+    "http-server": "^14.1.1",
     "rollup": "^3.9.0"
   }
 }

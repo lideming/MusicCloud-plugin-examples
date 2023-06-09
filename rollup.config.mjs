@@ -7,6 +7,10 @@ const modules = await readdir("plugins");
 /** @type {import("rollup").RollupOptions[]} */
 export default modules.map((m) => ({
   input: `plugins/${m}/index.ts`,
+  plugins: [
+    resolve(),
+    sucrase({ transforms: ["typescript"], disableESTransforms: true }),
+  ],
   output: {
     file: `dist/${m}.js`,
     format: "iife",
