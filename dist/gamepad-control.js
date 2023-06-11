@@ -131,9 +131,10 @@
 
   window.addEventListener("gamepadconnected", (ev) => {
     mcloud.Toast.show("Gamepad connected", 3000);
-    const { gamepad } = ev;
+    const { gamepad: { index } } = ev;
     const timer = setInterval(() => {
-      if (gamepad.connected) {
+      const gamepad = navigator.getGamepads()[index];
+      if (gamepad?.connected) {
         checkGamepad(gamepad);
       } else {
         clearInterval(timer);
