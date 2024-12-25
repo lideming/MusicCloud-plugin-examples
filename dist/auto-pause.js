@@ -18,6 +18,12 @@
 
   document.body.addEventListener("pointermove", resetTimer, true);
   document.body.addEventListener("keydown", resetTimer, true);
+  mcloud.playerCore.onStateChanged.add(() => {
+    // in case start playing by mediaSession/shortcut.
+    if (!timer && mcloud.playerCore.state === 'playing') {
+      resetTimer();
+    }
+  });
 
   settingStore.fetch().then(() => {
     console.info("[auto-pause] settings", settingStore.value);
