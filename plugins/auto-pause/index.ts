@@ -20,8 +20,10 @@ document.body.addEventListener("pointermove", resetTimer, true);
 document.body.addEventListener("keydown", resetTimer, true);
 playerCore.onStateChanged.add(() => {
   // in case start playing by mediaSession/shortcut.
-  if (!timer && playerCore.state === 'playing') {
+  if (!timer && playerCore.state === "playing") {
     resetTimer();
+    messageBox?.close();
+    messageBox = null;
   }
 });
 
@@ -31,6 +33,7 @@ settingStore.fetch().then(() => {
 });
 
 let timer: number | null = null;
+let messageBox: MessageBox | null = null;
 function resetTimer() {
   if (timer) {
     clearTimeout(timer);
@@ -40,16 +43,16 @@ function resetTimer() {
   timer = setTimeout(() => {
     if (playerCore.state === "playing" || playerCore.state === "stalled") {
       playerCore.pause();
-      new MessageBox()
+      messageBox = new MessageBox()
         .setTitle("Auto Paused")
         .addResultBtns(["yes", "no"])
-        .addText("Continue playing?")
-        .showAndWaitResult()
-        .then((result) => {
-          if (result === "yes") {
-            playerCore.play();
-          }
-        });
+        .addText("Continue playing?");
+      messageBox.showAndWaitResult().then((result) => {
+        if (result === "yes") {
+          playerCore.play();
+        }
+        messageBox = null;
+      });
     }
   }, timeout * 60 * 1000) as unknown as number;
 }

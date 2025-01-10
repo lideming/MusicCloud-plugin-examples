@@ -20,8 +20,10 @@
   document.body.addEventListener("keydown", resetTimer, true);
   mcloud.playerCore.onStateChanged.add(() => {
     // in case start playing by mediaSession/shortcut.
-    if (!timer && mcloud.playerCore.state === 'playing') {
+    if (!timer && mcloud.playerCore.state === "playing") {
       resetTimer();
+      messageBox?.close();
+      messageBox = null;
     }
   });
 
@@ -31,6 +33,7 @@
   });
 
   let timer = null;
+  let messageBox = null;
   function resetTimer() {
     if (timer) {
       clearTimeout(timer);
@@ -40,16 +43,16 @@
     timer = setTimeout(() => {
       if (mcloud.playerCore.state === "playing" || mcloud.playerCore.state === "stalled") {
         mcloud.playerCore.pause();
-        new webfx.MessageBox()
+        messageBox = new webfx.MessageBox()
           .setTitle("Auto Paused")
           .addResultBtns(["yes", "no"])
-          .addText("Continue playing?")
-          .showAndWaitResult()
-          .then((result) => {
-            if (result === "yes") {
-              mcloud.playerCore.play();
-            }
-          });
+          .addText("Continue playing?");
+        messageBox.showAndWaitResult().then((result) => {
+          if (result === "yes") {
+            mcloud.playerCore.play();
+          }
+          messageBox = null;
+        });
       }
     }, timeout * 60 * 1000) ;
   }
