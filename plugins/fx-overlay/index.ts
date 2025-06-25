@@ -154,8 +154,9 @@ function initOverlay(
   }
 
   function resizeCanvasToDisplaySize(canvas) {
-    const displayWidth = canvas.clientWidth;
-    const displayHeight = canvas.clientHeight;
+    const pixelRatio = window.devicePixelRatio || 1;
+    const displayWidth = Math.round(canvas.clientWidth * pixelRatio);
+    const displayHeight = Math.round(canvas.clientHeight * pixelRatio);
     if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
       canvas.width = displayWidth;
       canvas.height = displayHeight;
