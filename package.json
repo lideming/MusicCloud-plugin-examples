@@ -20,7 +20,7 @@
     "@rollup/plugin-node-resolve": "^15.3.1",
     "@rollup/plugin-sucrase": "^5.0.2",
     "@types/node": "^18.19.112",
-    "@yuuza/mcloud": "^1.0.18",
+    "@yuuza/mcloud": "^1.0.19",
     "@yuuza/webfx": "^1.10.8",
     "concurrently": "^8.2.2",
     "http-server": "^14.1.1",

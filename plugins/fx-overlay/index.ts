@@ -9,10 +9,6 @@ plugins.registerPlugin({
 });
 
 playerFX.initWebAudio().then(() => {
-  const canvas = new View({
-    tag: "canvas.fx-overlay",
-    style: `position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;`,
-  });
   const splitter = playerFX.ctx.createChannelSplitter(2);
   const analyserL = playerFX.ctx.createAnalyser();
   analyserL.fftSize = 2048;
@@ -23,14 +19,14 @@ playerFX.initWebAudio().then(() => {
   splitter.connect(analyserL, 0);
   splitter.connect(analyserR, 1);
 
-  const isVisible = new Ref(document.visibilityState === "visible");
-  document.addEventListener("visibilitychange", () => {
-    isVisible.value = document.visibilityState === "visible";
-  });
   const isActive = Ref.computed(() => {
-    return playerCore.state === "playing" && isVisible.value!;
+    return playerCore.state === "playing" && ui.isVisible.value!;
   });
 
+  const canvas = new View({
+    tag: "canvas.fx-overlay",
+    style: `position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;`,
+  });
   mountView(ui.mainContainer.dom, canvas);
   initOverlay(canvas.dom as HTMLCanvasElement, analyserL, analyserR, isActive);
 });

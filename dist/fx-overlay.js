@@ -9,10 +9,6 @@
   });
 
   mcloud.playerFX.initWebAudio().then(() => {
-    const canvas = new webfx.View({
-      tag: "canvas.fx-overlay",
-      style: `position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;`,
-    });
     const splitter = mcloud.playerFX.ctx.createChannelSplitter(2);
     const analyserL = mcloud.playerFX.ctx.createAnalyser();
     analyserL.fftSize = 2048;
@@ -23,14 +19,14 @@
     splitter.connect(analyserL, 0);
     splitter.connect(analyserR, 1);
 
-    const isVisible = new webfx.Ref(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", () => {
-      isVisible.value = document.visibilityState === "visible";
-    });
     const isActive = webfx.Ref.computed(() => {
-      return mcloud.playerCore.state === "playing" && isVisible.value;
+      return mcloud.playerCore.state === "playing" && mcloud.ui.isVisible.value;
     });
 
+    const canvas = new webfx.View({
+      tag: "canvas.fx-overlay",
+      style: `position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;`,
+    });
     webfx.mountView(mcloud.ui.mainContainer.dom, canvas);
     initOverlay(canvas.dom , analyserL, analyserR, isActive);
   });
