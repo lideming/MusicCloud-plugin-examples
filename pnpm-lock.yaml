@@ -8,14 +8,14 @@ devDependencies:
     specifier: ^5.0.2
     version: 5.0.2(rollup@3.29.5)
   '@types/node':
-    specifier: ^18.19.105
-    version: 18.19.105
+    specifier: ^18.19.112
+    version: 18.19.112
   '@yuuza/mcloud':
-    specifier: ^1.0.15
-    version: 1.0.15
+    specifier: ^1.0.18
+    version: 1.0.18
   '@yuuza/webfx':
-    specifier: ^1.10.6
-    version: 1.10.6
+    specifier: ^1.10.8
+    version: 1.10.8
   concurrently:
     specifier: ^8.2.2
     version: 8.2.2
@@ -28,8 +28,8 @@ devDependencies:
 
 packages:
 
-  /@babel/runtime@7.27.3:
-    resolution: {integrity: sha512-7EYtGezsdiDMyY80+65EzwiGmcJqpmcZCojSXaRgdrBaGtWTgDZKq69cPIVped6MkIM78cTQ2GOiEYjwOlG4xw==}
+  /@babel/runtime@7.27.6:
+    resolution: {integrity: sha512-vbavdySgbTTrmFE+EsiqUTzlOr5bzlnJtUv9PynGCAKvfQqjIXbvFdumPM/GxMDfyuGMJaJAU6TO4zc1Jf1i8Q==}
     engines: {node: '>=6.9.0'}
     dev: true
 
@@ -91,7 +91,7 @@ packages:
       rollup:
         optional: true
     dependencies:
-      '@rollup/pluginutils': 5.1.4(rollup@3.29.5)
+      '@rollup/pluginutils': 5.2.0(rollup@3.29.5)
       '@types/resolve': 1.20.2
       deepmerge: 4.3.1
       is-module: 1.0.0
@@ -108,13 +108,13 @@ packages:
       rollup:
         optional: true
     dependencies:
-      '@rollup/pluginutils': 5.1.4(rollup@3.29.5)
+      '@rollup/pluginutils': 5.2.0(rollup@3.29.5)
       rollup: 3.29.5
       sucrase: 3.35.0
     dev: true
 
-  /@rollup/pluginutils@5.1.4(rollup@3.29.5):
-    resolution: {integrity: sha512-USm05zrsFxYLPdWWq+K3STlWiT/3ELn3RcV5hJMghpeAIhxfsUIg6mt12CBJBInWMV4VneoV7SfGv8xIwo2qNQ==}
+  /@rollup/pluginutils@5.2.0(rollup@3.29.5):
+    resolution: {integrity: sha512-qWJ2ZTbmumwiLFomfzTyt5Kng4hwPi9rwCYN4SHb6eaRU1KNO4ccxINHr/VhH4GgPlt1XfSTLX2LBTme8ne4Zw==}
     engines: {node: '>=14.0.0'}
     peerDependencies:
       rollup: ^1.20.0||^2.0.0||^3.0.0||^4.0.0
@@ -122,18 +122,18 @@ packages:
       rollup:
         optional: true
     dependencies:
-      '@types/estree': 1.0.7
+      '@types/estree': 1.0.8
       estree-walker: 2.0.2
       picomatch: 4.0.2
       rollup: 3.29.5
     dev: true
 
-  /@types/estree@1.0.7:
-    resolution: {integrity: sha512-w28IoSUCJpidD/TGviZwwMJckNESJZXFu7NBZ5YJ4mEUnNraUn9Pm8HSZm/jDF1pDWYKspWE7oVphigUPRakIQ==}
+  /@types/estree@1.0.8:
+    resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
     dev: true
 
-  /@types/node@18.19.105:
-    resolution: {integrity: sha512-a+DrwD2VyzqQR2W0EVF8EaCh6Em4ilQAYLEPZnMNkQHXR7ziWW7RUhZMWZAgRpkDDAdUIcJOXSPJT/zBEwz3sA==}
+  /@types/node@18.19.112:
+    resolution: {integrity: sha512-i+Vukt9POdS/MBI7YrrkkI5fMfwFtOjphSmt4WXYLfwqsfr6z/HdCx7LqT9M7JktGob8WNgj8nFB4TbGNE4Cog==}
     dependencies:
       undici-types: 5.26.5
     dev: true
@@ -146,21 +146,21 @@ packages:
     resolution: {integrity: sha512-OCncYfVJuYEBGo31/HMMALJOHbshL5NZP/lCJ0Z1ZwtHqnSrXeaW4jxR7u7itE7tQABYulmFsKviJnSPvbnLwA==}
     dev: true
 
-  /@yuuza/mcloud@1.0.15:
-    resolution: {integrity: sha512-ixcT8nWe6hVnM0EN8sk4OMOzXCFOckH/S6F0t/Jg5Tx3C4kB+LMkYV+RhJYeg+/tZU8Fgo8ySG/ts47XSSWmNQ==}
+  /@yuuza/mcloud@1.0.18:
+    resolution: {integrity: sha512-psqjsKP9Am1OBMdHpo8s6yThCizAp2cTOLeBBpeQH+9mFn6XU5FQtAL+h3ZCEnsIsBRRjelLAWQUNhfbeJmG4A==}
     dependencies:
-      '@yuuza/webfx': 1.10.6
+      '@yuuza/webfx': 1.10.8
     dev: true
 
-  /@yuuza/utils@1.0.5:
-    resolution: {integrity: sha512-VrjyMhuKQ3W+MgT0gG34Z6a+wT9wmGbcyNI58GgIUArNK0iZ002l7C8VN+Hh1P7nMeY+bCK/MN26B1VNBSjniA==}
+  /@yuuza/utils@1.0.6:
+    resolution: {integrity: sha512-CQS+wscvlGEQWtmqPr+lPT7dcBqOiDvUmE3A+uOcRlT90+/GKPR9Xt2s1cVixSkjcXwMVYwBAFrycTtabykHpg==}
     dev: true
 
-  /@yuuza/webfx@1.10.6:
-    resolution: {integrity: sha512-AvnDKTKtSQ9XBipm/9TaGx392pk7tdLSxeVNw1oZXf5y7MaQYgcWmf3ifSvq3h7p6QdpDjHcXcPSzM5ILPTSRA==}
+  /@yuuza/webfx@1.10.8:
+    resolution: {integrity: sha512-TLzMmUEnvKE1bEL8skXCWgD3GgsYXxKE+AjyJA8o4WuhlcoN0f4HxyPSa/tqArdlwTW9oICwMyAw22hh/0wh2Q==}
     dependencies:
       '@yuuza/i18n': 1.2.3
-      '@yuuza/utils': 1.0.5
+      '@yuuza/utils': 1.0.6
     dev: true
 
   /ansi-regex@5.0.1:
@@ -204,8 +204,8 @@ packages:
       safe-buffer: 5.1.2
     dev: true
 
-  /brace-expansion@2.0.1:
-    resolution: {integrity: sha512-XnAIvQ8eM+kC6aULx6wuQiwVsnzsi9d3WxzV3FpWTGA19F621kwdbsAcFKXgKUHZWsy+mY6iL1sHTxWEFCytDA==}
+  /brace-expansion@2.0.2:
+    resolution: {integrity: sha512-Jt0vHyM+jmUBqojB7E1NIYadt0vI0Qxjxd2TErW94wDz+E2LAm5vKMXXwg6ZZBTHPuUlDgQHKXvjGBdfcF1ZDQ==}
     dependencies:
       balanced-match: 1.0.2
     dev: true
@@ -268,7 +268,7 @@ packages:
       date-fns: 2.30.0
       lodash: 4.17.21
       rxjs: 7.8.2
-      shell-quote: 1.8.2
+      shell-quote: 1.8.3
       spawn-command: 0.0.2
       supports-color: 8.1.1
       tree-kill: 1.2.2
@@ -293,7 +293,7 @@ packages:
     resolution: {integrity: sha512-fnULvOpxnC5/Vg3NCiWelDsLiUc9bRwAPs/+LfTLNvetFCtCTN+yQz15C/fs4AwX1R9K5GLtLfn8QW+dWisaAw==}
     engines: {node: '>=0.11'}
     dependencies:
-      '@babel/runtime': 7.27.3
+      '@babel/runtime': 7.27.6
     dev: true
 
   /debug@4.4.1:
@@ -565,7 +565,7 @@ packages:
     resolution: {integrity: sha512-G6T0ZX48xgozx7587koeX9Ys2NYy6Gmv//P89sEte9V9whIapMNF4idKxnW2QtCcLiTWlb/wfCabAtAFWhhBow==}
     engines: {node: '>=16 || 14 >=14.17'}
     dependencies:
-      brace-expansion: 2.0.1
+      brace-expansion: 2.0.2
     dev: true
 
   /minimist@1.2.8:
@@ -709,8 +709,8 @@ packages:
     engines: {node: '>=8'}
     dev: true
 
-  /shell-quote@1.8.2:
-    resolution: {integrity: sha512-AzqKpGKjrj7EM6rKVQEPpB288oCfnrEIuyoT9cyF4nmGa7V8Zk6f7RRqYisX8X9m+Q7bd632aZW4ky7EhbQztA==}
+  /shell-quote@1.8.3:
+    resolution: {integrity: sha512-ObmnIF4hXNg1BqhnHmgbDETF8dLPCggZWBjkQfhZpbszZnYur5DUljTcCHii5LC3J5E0yeO/1LIMyH+UvHQgyw==}
     engines: {node: '>= 0.4'}
     dev: true
 
