@@ -28,7 +28,6 @@ playerFX.initWebAudio().then(() => {
     isVisible.value = document.visibilityState === "visible";
   });
   const isActive = Ref.computed(() => {
-    console.info("[fx-overlay] isActive", playerCore.state, isVisible.value);
     return playerCore.state === "playing" && isVisible.value!;
   });
 

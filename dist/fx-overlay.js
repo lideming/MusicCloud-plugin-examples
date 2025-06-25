@@ -28,7 +28,6 @@
       isVisible.value = document.visibilityState === "visible";
     });
     const isActive = webfx.Ref.computed(() => {
-      console.info("[fx-overlay] isActive", mcloud.playerCore.state, isVisible.value);
       return mcloud.playerCore.state === "playing" && isVisible.value;
     });
 
