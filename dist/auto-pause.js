@@ -20,9 +20,9 @@
   document.body.addEventListener("keydown", resetTimer, true);
   mcloud.playerCore.onStateChanged.add(() => {
     // in case start playing by mediaSession/shortcut.
-    if (!timer && mcloud.playerCore.state === "playing") {
+    if (messageBox && mcloud.playerCore.state === "playing") {
       resetTimer();
-      messageBox?.close();
+      messageBox.close();
       messageBox = null;
     }
   });
