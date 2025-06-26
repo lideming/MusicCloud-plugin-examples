@@ -20,9 +20,9 @@ document.body.addEventListener("pointermove", resetTimer, true);
 document.body.addEventListener("keydown", resetTimer, true);
 playerCore.onStateChanged.add(() => {
   // in case start playing by mediaSession/shortcut.
-  if (!timer && playerCore.state === "playing") {
+  if (messageBox && playerCore.state === "playing") {
     resetTimer();
-    messageBox?.close();
+    messageBox.close();
     messageBox = null;
   }
 });
