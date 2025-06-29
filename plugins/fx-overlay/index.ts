@@ -1,11 +1,26 @@
 import { playerCore, playerFX, plugins, Toast, ui } from "@yuuza/mcloud";
-import { mountView, Ref, View } from "@yuuza/webfx";
+import {
+  Action,
+  Callbacks,
+  mountView,
+  Ref,
+  unmountView,
+  View,
+} from "@yuuza/webfx";
+
+const unloadCallbacks = new Callbacks<Action>();
 
 plugins.registerPlugin({
   name: "FX Overlay",
   description: "",
   version: "1.0.0",
   website: "https://github.com/lideming/MusicCloud-example-plugins",
+  unload: () => unloadCallbacks.invoke(),
+});
+
+const unloaded = new Ref(false);
+unloadCallbacks.add(() => {
+  unloaded.value = true;
 });
 
 playerFX.initWebAudio().then(() => {
@@ -19,23 +34,21 @@ playerFX.initWebAudio().then(() => {
   splitter.connect(analyserL, 0);
   splitter.connect(analyserR, 1);
 
-  const isActive = Ref.computed(() => {
-    return playerCore.state === "playing" && ui.isVisible.value!;
-  });
-
   const canvas = new View({
     tag: "canvas.fx-overlay",
     style: `position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;`,
   });
   mountView(ui.mainContainer.dom, canvas);
-  initOverlay(canvas.dom as HTMLCanvasElement, analyserL, analyserR, isActive);
+  unloadCallbacks.add(() => {
+    unmountView(ui.mainContainer.dom, canvas);
+  });
+  initOverlay(canvas.dom as HTMLCanvasElement, analyserL, analyserR);
 });
 
 function initOverlay(
   canvas: HTMLCanvasElement,
   analyserL: AnalyserNode,
   analyserR: AnalyserNode,
-  isActive: Ref<boolean>,
 ) {
   const vertexShaderSource = `
     attribute vec2 a_position;
@@ -254,9 +267,18 @@ function initOverlay(
     }
   };
 
+  setupTimer(render, clear);
+}
+
+function setupTimer(render, clear) {
   let timer = 0;
   Ref.effect(() => {
-    if (isActive.value) {
+    if (unloaded.value) {
+      console.info("[fx-overlay] unloaded");
+      clearInterval(timer);
+      return;
+    }
+    if (playerCore.state === "playing" && ui.isVisible.value!) {
       render();
       timer = setInterval(render, 1000 / 60) as unknown as number;
     } else {

@@ -1,11 +1,19 @@
 (function (mcloud, webfx) {
   'use strict';
 
+  const unloadCallbacks = new webfx.Callbacks();
+
   mcloud.plugins.registerPlugin({
     name: "FX Overlay",
     description: "",
     version: "1.0.0",
     website: "https://github.com/lideming/MusicCloud-example-plugins",
+    unload: () => unloadCallbacks.invoke(),
+  });
+
+  const unloaded = new webfx.Ref(false);
+  unloadCallbacks.add(() => {
+    unloaded.value = true;
   });
 
   mcloud.playerFX.initWebAudio().then(() => {
@@ -19,23 +27,21 @@
     splitter.connect(analyserL, 0);
     splitter.connect(analyserR, 1);
 
-    const isActive = webfx.Ref.computed(() => {
-      return mcloud.playerCore.state === "playing" && mcloud.ui.isVisible.value;
-    });
-
     const canvas = new webfx.View({
       tag: "canvas.fx-overlay",
       style: `position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;`,
     });
     webfx.mountView(mcloud.ui.mainContainer.dom, canvas);
-    initOverlay(canvas.dom , analyserL, analyserR, isActive);
+    unloadCallbacks.add(() => {
+      webfx.unmountView(mcloud.ui.mainContainer.dom, canvas);
+    });
+    initOverlay(canvas.dom , analyserL, analyserR);
   });
 
   function initOverlay(
     canvas,
     analyserL,
     analyserR,
-    isActive,
   ) {
     const vertexShaderSource = `
     attribute vec2 a_position;
@@ -254,9 +260,18 @@
       }
     };
 
+    setupTimer(render, clear);
+  }
+
+  function setupTimer(render, clear) {
     let timer = 0;
     webfx.Ref.effect(() => {
-      if (isActive.value) {
+      if (unloaded.value) {
+        console.info("[fx-overlay] unloaded");
+        clearInterval(timer);
+        return;
+      }
+      if (mcloud.playerCore.state === "playing" && mcloud.ui.isVisible.value) {
         render();
         timer = setInterval(render, 1000 / 60) ;
       } else {
