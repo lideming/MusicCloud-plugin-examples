@@ -26,9 +26,9 @@ unloadCallbacks.add(() => {
 playerFX.initWebAudio().then(() => {
   const splitter = playerFX.ctx.createChannelSplitter(2);
   const analyserL = playerFX.ctx.createAnalyser();
-  analyserL.fftSize = 2048;
+  analyserL.fftSize = 1024;
   const analyserR = playerFX.ctx.createAnalyser();
-  analyserR.fftSize = 2048;
+  analyserR.fftSize = 1024;
 
   playerFX.source.connect(splitter);
   splitter.connect(analyserL, 0);
@@ -69,7 +69,7 @@ function initOverlay(
         float freqCoordX = pow(v_texCoord.y, 2.0);
 
         float loudness = 0.0;
-        float glowWidth = 0.1;
+        float glowWidth = 0.4;
 
         if (v_texCoord.x < glowWidth) {
             loudness = texture2D(u_frequencyTexL, vec2(freqCoordX, 0.5)).r;
@@ -87,13 +87,13 @@ function initOverlay(
         } else if (v_texCoord.x > 1.0 - glowWidth) {
             glowFactor = smoothstep(1.0 - glowWidth, 1.0, v_texCoord.x);
         }
-        glowFactor = pow(glowFactor, 1.5);
+        glowFactor = pow(glowFactor, 2.0);
         
         vec3 lowFreqColor = vec3(0.9, 0.4, 0.1);
         vec3 highFreqColor = vec3(0.0, 0.4, 0.8);
         vec3 color = mix(lowFreqColor, highFreqColor, v_texCoord.y);
 
-        float intensity = min(pow(loudness, 1.3), 0.8);
+        float intensity = min(pow(loudness, 1.3), 1.0) * 0.3;
 
         gl_FragColor = vec4(color, intensity * glowFactor);
     }
