@@ -75,7 +75,7 @@
     if (text) formData.append("text", text);
     if (lang) formData.append("lang", lang);
     console.info("transcribe request", formData);
-    const response = await fetch(mcloud.api.processUrl('/transcribe'), {
+    const response = await fetch(mcloud.api.processUrl('transcribe'), {
       method: "POST",
       body: formData,
     });

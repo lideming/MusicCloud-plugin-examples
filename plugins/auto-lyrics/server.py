@@ -110,6 +110,14 @@ async def transcribe_audio(file: UploadFile = File(...), text: Optional[str] = F
             os.remove(temp_audio_path)
             print(f"deleted: {temp_audio_path}")
 
+# health check endpoint
+@app.get("/health")
+async def health_check():
+    if model:
+        return {"status": "ok"}
+    else:
+        raise HTTPException(status_code=500, detail="model is not loaded")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
