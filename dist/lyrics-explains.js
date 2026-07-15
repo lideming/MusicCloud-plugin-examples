@@ -4,8 +4,8 @@
   // --- Plugin Registration ---
   mcloud.plugins.registerPlugin({
     name: "Lyrics Explains",
-    description: "Generates line-by-line explanations for lyrics using Gemini API.",
-    version: "0.1.0",
+    description: "Generates line-by-line explanations for lyrics using Gemini or OpenAI Chat Completions APIs.",
+    version: "0.2.0",
     website: "",
     settings: () => openSettingsDialog(),
   });
@@ -18,14 +18,17 @@
     ["Explanation generated successfully for \"{0}\".", "已成功为“{0}”生成解释。", "\"{0}\"の解説が正常に生成されました。"],
     ["Error generating explanation:", "生成解释时出错：", "解説の生成中にエラーが発生しました："],
     ["Lyrics Explains Settings", "歌词解释设置", "歌詞解説設定"],
-    ["Gemini API Key:", "Gemini API 密钥：", "Gemini API キー："],
-    ["Enter your Gemini API Key", "输入您的 Gemini API 密钥", "Gemini API キーを入力してください"],
-    ["API Base URL (optional):", "API Base URL（可选）：", "API ベース URL（オプション）："],
+    ["API Provider:", "API 提供商：", "API プロバイダー："],
+    ["OpenAI Chat Completions", "OpenAI Chat Completions", "OpenAI Chat Completions"],
+    ["API Key:", "API 密钥：", "API キー："],
+    ["Enter your API Key", "输入您的 API 密钥", "API キーを入力してください"],
+    ["API Base URL or Endpoint (optional):", "API Base URL 或 Endpoint（可选）：", "API ベース URL またはエンドポイント（オプション）："],
+    ["Model:", "模型：", "モデル："],
     ["Custom Prompt Addition:", "自定义提示词补充：", "カスタムプロンプト追加："],
     ["Add custom instructions for the AI (optional)", "为 AI 添加自定义指令（可选）", "AI へのカスタム指示を追加（オプション）"],
     ["Settings saved.", "设置已保存。", "設定が保存されました。"],
     ["Failed to parse explanations from the API response.", "未能从 API 响应中解析解释。", "API 応答から解説を解析できませんでした。"],
-    ["Gemini API Key is not configured for Lyrics Explains plugin.", "尚未配置歌词解释插件的 Gemini API 密钥。", "歌詞解説プラグインの Gemini API キーが設定されていません。"]
+    ["API Key is not configured for Lyrics Explains plugin.", "尚未配置歌词解释插件的 API 密钥。", "歌詞解説プラグインの API キーが設定されていません。"],
   ]);
 
   // Define the structure for storing configuration
@@ -39,14 +42,44 @@
 
 
 
+  const providerDefaults = {
+    gemini: {
+      baseUrl: "https://generativelanguage.googleapis.com",
+      model: "gemini-2.5-flash",
+    },
+    openai: {
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-5.6-luna",
+    },
+  };
+
+  function normalizeConfig(config) {
+    const current = config || {};
+    const provider = current.provider === "openai" ? "openai" : "gemini";
+    const defaults = providerDefaults[provider];
+    return {
+      provider,
+      apiKey: current.apiKey || "",
+      baseUrl: current.baseUrl || defaults.baseUrl,
+      model: current.model || defaults.model,
+      customPrompt: current.customPrompt || "",
+    };
+  }
+
+  // Define the structure for storing explanation results
+
+
+
 
 
   // --- Configuration Store ---
   const configStore = new mcloud.UserStoreItem({
     key: "plugin-lyrics-explains-config",
     value: {
+      provider: "gemini",
       apiKey: "",
-      baseUrl: "https://generativelanguage.googleapis.com", // Default Gemini API URL
+      baseUrl: providerDefaults.gemini.baseUrl,
+      model: providerDefaults.gemini.model,
       customPrompt: "",
     },
   });
@@ -60,51 +93,107 @@
   // Ensure config is loaded when the plugin initializes
   configStore.fetch();
 
-  // --- Gemini API Call ---
-  async function callGemini(prompt) {
-    const config = await configStore.get(); // Ensure config is loaded
-    if (!config.apiKey) {
-      mcloud.Toast.show(webfx.I`Gemini API Key is not configured for Lyrics Explains plugin.`, 3000);
-      throw new Error("API Key not configured.");
-    }
-
-    const model = "gemini-2.5-flash"; // Use the specified model
-    const url = `${config.baseUrl || 'https://generativelanguage.googleapis.com'}/v1beta/models/${model}:generateContent?key=${config.apiKey}`;
-
+  // --- AI API Calls ---
+  async function readJsonResponse(response) {
+    const text = await response.text();
+    if (!text) return {};
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          // Optional: Add safetySettings, generationConfig if needed
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Gemini API Error:", errorData);
-        throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorData.error?.message || 'Unknown error'}`);
-      }
-
-      const data = await response.json();
-      // Navigate the Gemini response structure
-      if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
-        return data.candidates[0].content.parts[0].text;
-      } else {
-        console.error("Unexpected Gemini API response structure:", data);
-        throw new Error("Unexpected response structure from Gemini API.");
-      }
-    } catch (error) {
-      console.error("Failed to call Gemini API:", error);
-      throw error; // Re-throw the error to be caught by the caller
+      return JSON.parse(text);
+    } catch {
+      return { message: text.slice(0, 300) };
     }
   }
 
+  function throwApiError(response, data) {
+    const detail = data?.error?.message || data?.message || "Unknown error";
+    throw new Error(`API Error: ${response.status} ${response.statusText} - ${detail}`);
+  }
+
+  async function callGemini(prompt, config) {
+    const baseUrl = config.baseUrl.replace(/\/+$/, "");
+    const url = `${baseUrl}/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
+    const data = await readJsonResponse(response);
+    if (!response.ok) {
+      console.error("Gemini API Error:", data);
+      throwApiError(response, data);
+    }
+
+    const parts = data?.candidates?.[0]?.content?.parts;
+    if (Array.isArray(parts)) {
+      const text = parts.map((part) => part?.text || "").join("");
+      if (text) return text;
+    }
+    console.error("Unexpected Gemini API response structure:", data);
+    throw new Error("Unexpected response structure from Gemini API.");
+  }
+
+  function getOpenAIChatCompletionsUrl(baseUrlOrEndpoint) {
+    const fallback = providerDefaults.openai.baseUrl;
+    const input = (baseUrlOrEndpoint || fallback).trim();
+    try {
+      const url = new URL(input);
+      let path = url.pathname.replace(/\/+$/, "");
+      if (/\/chat\/completions$/i.test(path)) return url.toString();
+      if (!path && url.origin === "https://api.openai.com") path = "/v1";
+      url.pathname = `${path}/chat/completions`;
+      return url.toString();
+    } catch {
+      const base = input.replace(/\/+$/, "");
+      if (/\/chat\/completions(?:\?|$)/i.test(base)) return base;
+      return `${base}/chat/completions`;
+    }
+  }
+
+  async function callOpenAI(prompt, config) {
+    const response = await fetch(getOpenAIChatCompletionsUrl(config.baseUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    const data = await readJsonResponse(response);
+    if (!response.ok) {
+      console.error("OpenAI Chat Completions API Error:", data);
+      throwApiError(response, data);
+    }
+
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content === "string" && content) return content;
+    if (Array.isArray(content)) {
+      const text = content.map((part) => part?.text || "").join("");
+      if (text) return text;
+    }
+    console.error("Unexpected OpenAI Chat Completions response structure:", data);
+    throw new Error("Unexpected response structure from OpenAI Chat Completions API.");
+  }
+
+  async function callAI(prompt) {
+    const config = normalizeConfig(await configStore.get());
+    if (!config.apiKey) {
+      mcloud.Toast.show(webfx.I`API Key is not configured for Lyrics Explains plugin.`, 3000);
+      throw new Error("API Key not configured.");
+    }
+    return config.provider === "openai"
+      ? callOpenAI(prompt, config)
+      : callGemini(prompt, config);
+  }
+
   // --- Prompt Construction ---
-  function buildPrompt(lyrics, track, customPrompt) {
+  function buildPrompt(lyrics, customPrompt) {
     // Split lyrics into lines and add line numbers for the input format
     const lines = [...new Set(lyrics.lines.map(line => line.spans?.map(x => x.text).join('').trim()).filter(line => line))] ; // Unique, non-empty lines
     const numberedLines = lines
@@ -165,7 +254,7 @@ ${numberedLines}
 
 
 
-  function parseGeminiResponse(responseText, lines) {
+  function parseAIResponse(responseText, lines) {
     const explanations = {};
     let parsedJson;
 
@@ -181,18 +270,18 @@ ${numberedLines}
       }
 
     } catch (error) {
-      console.error("Failed to parse Gemini JSON response:", error);
+      console.error("Failed to parse AI JSON response:", error);
       console.error("Raw response text:", responseText); // Log raw response for debugging
       throw new Error(`Failed to parse JSON response from AI. ${error}`);
     }
 
     for (const item of parsedJson.data) {
-      if (item.line !== undefined) {
+      if (item.line !== undefined && lines[item.line] !== undefined) {
         // Use the original line text as the key for robustness
         const original = lines[item.line];
         explanations[original] = {
           translation: item.translation,
-          explanation: item.explains.join('\n')
+          explanation: Array.isArray(item.explains) ? item.explains.join('\n') : ""
         };
       } else {
         console.warn("Skipping invalid item in parsed JSON data:", item);
@@ -203,14 +292,6 @@ ${numberedLines}
 
     return explanations;
   }
-
-  // Ensure LineExplanation matches the new structure if needed, or adapt parsing
-  // For now, adapting the parsing to fit the existing LineExplanation (string explanation)
-
-
-
-
-
 
   // --- Trigger via Context Menu ---
   webfx.hookFunction(mcloud.trackContextMenuHooks, "onCreated", (next) => (context) => {
@@ -231,17 +312,17 @@ ${numberedLines}
 
             try {
               const lyricsText = await track.getLyrics(); // Fetch lyrics
-              const parsed = mcloud.Lyrics.parse(lyricsText);
               if (!lyricsText) {
                 toast.updateWith({ text: webfx.I`No lyrics found for this track.` });
                 toast.show(3000);
                 return;
               }
+              const parsed = mcloud.Lyrics.parse(lyricsText);
 
-              const config = await configStore.get();
-              const { prompt, lines } = buildPrompt(parsed, track, config.customPrompt);
-              const geminiResponse = await callGemini(prompt);
-              const parsedExplanations = parseGeminiResponse(geminiResponse, lines);
+              const config = normalizeConfig(await configStore.get());
+              const { prompt, lines } = buildPrompt(parsed, config.customPrompt);
+              const aiResponse = await callAI(prompt);
+              const parsedExplanations = parseAIResponse(aiResponse, lines);
 
               if (!parsedExplanations || Object.keys(parsedExplanations).length === 0) {
                 throw new Error(webfx.I`Failed to parse explanations from the API response.`);
@@ -354,22 +435,65 @@ ${numberedLines}
     dialog.title = webfx.I`Lyrics Explains Settings`;
     dialog.width = "500px";
 
-    const apiKeyInput = new webfx.InputView({ type: 'password', placeholder: webfx.I`Enter your Gemini API Key` });
-    const baseUrlInput = new webfx.InputView({ placeholder: `Default: ${configStore.value.baseUrl}` });
+    const providerSelect = new webfx.View({
+      tag: "select.input-text",
+      style: "width: 100%;",
+      child: [
+        { tag: "option", value: "gemini", text: "Gemini" },
+        { tag: "option", value: "openai", text: webfx.I`OpenAI Chat Completions` },
+      ],
+    });
+    const apiKeyInput = new webfx.InputView({ type: 'password', placeholder: webfx.I`Enter your API Key` });
+    const baseUrlInput = new webfx.InputView();
+    const modelInput = new webfx.InputView();
     const customPromptInput = new webfx.InputView({ multiline: true, placeholder: webfx.I`Add custom instructions for the AI (optional)` });
+    let previousProvider = "gemini";
 
-    // Load current values
-    configStore.get().then(config => {
-      apiKeyInput.value = config.apiKey || "";
-      baseUrlInput.value = config.baseUrl || "";
-      customPromptInput.value = config.customPrompt || "";
+    const getSelectedProvider = () =>
+      providerSelect.dom.value === "openai" ? "openai" : "gemini";
+
+    const updateProviderFields = (provider, replacePreviousDefaults) => {
+      const previousDefaults = providerDefaults[previousProvider];
+      const defaults = providerDefaults[provider];
+      if (replacePreviousDefaults) {
+        if (!baseUrlInput.value || baseUrlInput.value === previousDefaults.baseUrl) {
+          baseUrlInput.value = defaults.baseUrl;
+        }
+        if (!modelInput.value || modelInput.value === previousDefaults.model) {
+          modelInput.value = defaults.model;
+        }
+      }
+      baseUrlInput.placeholder = `Default: ${defaults.baseUrl}`;
+      modelInput.placeholder = `Default: ${defaults.model}`;
+      baseUrlInput.updateDom();
+      modelInput.updateDom();
+      previousProvider = provider;
+    };
+
+    providerSelect.dom.addEventListener("change", () => {
+      updateProviderFields(getSelectedProvider(), true);
     });
 
+    // Load current values
+    configStore.get().then(storedConfig => {
+      const config = normalizeConfig(storedConfig);
+      providerSelect.dom.value = config.provider;
+      apiKeyInput.value = config.apiKey || "";
+      baseUrlInput.value = config.baseUrl;
+      modelInput.value = config.model;
+      customPromptInput.value = config.customPrompt || "";
+      previousProvider = config.provider;
+      updateProviderFields(config.provider, false);
+    });
 
-    dialog.addContent(webfx.I`Gemini API Key:`);
+    dialog.addContent(webfx.I`API Provider:`);
+    dialog.addContent(providerSelect);
+    dialog.addContent(webfx.I`API Key:`);
     dialog.addContent(apiKeyInput);
-    dialog.addContent(webfx.I`API Base URL (optional):`);
+    dialog.addContent(webfx.I`API Base URL or Endpoint (optional):`);
     dialog.addContent(baseUrlInput);
+    dialog.addContent(webfx.I`Model:`);
+    dialog.addContent(modelInput);
     dialog.addContent(webfx.I`Custom Prompt Addition:`);
     dialog.addContent(customPromptInput);
 
@@ -377,10 +501,14 @@ ${numberedLines}
       text: webfx.I`Save`,
       right: true,
       onActive: async () => {
+        const provider = getSelectedProvider();
+        const defaults = providerDefaults[provider];
         configStore.value = {
           ...configStore.value,
+          provider,
           apiKey: apiKeyInput.value.trim(),
-          baseUrl: baseUrlInput.value.trim() || "https://generativelanguage.googleapis.com", // Reset to default if empty
+          baseUrl: baseUrlInput.value.trim() || defaults.baseUrl,
+          model: modelInput.value.trim() || defaults.model,
           customPrompt: customPromptInput.value.trim(),
         };
         configStore.revision = null;
