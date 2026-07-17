@@ -22,12 +22,13 @@ import {
   View,
   injectCss,
 } from "@yuuza/webfx";
+import { buildDictionaryReferences } from "./dictionary";
 
 // --- Plugin Registration ---
 plugins.registerPlugin({
   name: "Lyrics Explains",
-  description: "Generates line-by-line explanations for lyrics using Gemini or OpenAI Chat Completions APIs.",
-  version: "0.2.0",
+  description: "Generates line-by-line explanations with Gemini or OpenAI APIs and local JMdict references.",
+  version: "0.3.0",
   website: "",
   settings: () => openSettingsDialog(),
 });
@@ -203,21 +204,37 @@ async function callOpenAI(prompt: string, config: Required<LyricsExplainsConfig>
   throw new Error("Unexpected response structure from OpenAI Chat Completions API.");
 }
 
-async function callAI(prompt: string): Promise<string> {
-  const config = normalizeConfig(await configStore.get());
+function ensureApiConfigured(config: Required<LyricsExplainsConfig>) {
   if (!config.apiKey) {
     Toast.show(I`API Key is not configured for Lyrics Explains plugin.`, 3000);
     throw new Error("API Key not configured.");
   }
+}
+
+async function callAI(
+  prompt: string,
+  config: Required<LyricsExplainsConfig>,
+): Promise<string> {
   return config.provider === "openai"
     ? callOpenAI(prompt, config)
     : callGemini(prompt, config);
 }
 
 // --- Prompt Construction ---
-function buildPrompt(lyrics: Lyrics.Lyrics, customPrompt?: string) {
+function getUniqueLyricsLines(lyrics: Lyrics.Lyrics): string[] {
   // Split lyrics into lines and add line numbers for the input format
-  const lines = [...new Set(lyrics.lines.map(line => line.spans?.map(x => x.text).join('').trim()).filter(line => line))] as string[]; // Unique, non-empty lines
+  return [...new Set(
+    lyrics.lines
+      .map(line => line.spans?.map(x => x.text).join('').trim())
+      .filter(line => line),
+  )] as string[];
+}
+
+function buildPrompt(
+  lines: string[],
+  customPrompt?: string,
+  dictionaryReferences?: string,
+) {
   const numberedLines = lines
     .map((line, index) => `line ${index}: ${line}`)
     .join('\n');
@@ -257,12 +274,13 @@ Example Output JSON:
   ]
 }
 User's Additional Instructions:${customPrompt ? `\n${customPrompt}\n` : ' not provided.'}
-Now analyze these lyrics based *only* on the provided input lines. Ensure the output is a single, valid JSON object starting with { and ending with }:
+${dictionaryReferences || ""}
+Now analyze these lyrics using the input lines and only the relevant dictionary references above. Ensure the output is a single, valid JSON object starting with { and ending with }:
 ---
 ${numberedLines}
 ---
 `;
-  return { prompt, lines };
+  return prompt;
 }
 
 // --- Response Parsing ---
@@ -342,8 +360,11 @@ hookFunction(trackContextMenuHooks, "onCreated", (next) => (context) => {
             const parsed = Lyrics.parse(lyricsText);
 
             const config = normalizeConfig(await configStore.get());
-            const { prompt, lines } = buildPrompt(parsed, config.customPrompt);
-            const aiResponse = await callAI(prompt);
+            ensureApiConfigured(config);
+            const lines = getUniqueLyricsLines(parsed);
+            const dictionaryReferences = await buildDictionaryReferences(lines);
+            const prompt = buildPrompt(lines, config.customPrompt, dictionaryReferences);
+            const aiResponse = await callAI(prompt, config);
             const parsedExplanations = parseAIResponse(aiResponse, lines);
 
             if (!parsedExplanations || Object.keys(parsedExplanations).length === 0) {

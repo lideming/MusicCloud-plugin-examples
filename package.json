@@ -9,6 +9,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "rollup -c",
+    "update:lyrics-dictionary": "python3 plugins/lyrics-explains/data/build_jmdict.py",
     "watch": "rollup -c -w",
     "serve": "http-server -p 4321 -c-1 dist",
     "dev": "concurrently npm:watch npm:serve"

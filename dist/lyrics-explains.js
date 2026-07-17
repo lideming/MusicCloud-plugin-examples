@@ -1,11 +1,427 @@
 (function (mcloud, webfx) {
   'use strict';
 
+  const JMDICT_URL =
+    "https://cdn.jsdelivr.net/gh/lideming/MusicCloud-plugin-examples@master/plugins/lyrics-explains/data/jmdict-eng-common.json";
+  const KUROMOJI_SCRIPT_URL =
+    "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js";
+  const KUROMOJI_DICTIONARY_URL =
+    "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
+
+  const MAX_SCAN_LENGTH = 18;
+  const MAX_DICTIONARY_REFERENCES = 60;
+  const MAX_REFERENCE_CHARACTERS = 10000;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  function toHiragana(text) {
+    return text.replace(/[ァ-ヶ]/g, character =>
+      String.fromCharCode(character.charCodeAt(0) - 0x60),
+    );
+  }
+
+  function normalizeLookupText(text) {
+    return toHiragana(text.normalize("NFKC")).toLowerCase();
+  }
+
+  function containsKanji(text) {
+    return /[々〆ヶ一-龯]/.test(text);
+  }
+
+  async function withTimeout(
+    promise,
+    timeoutMs,
+    message,
+  ) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  class RuntimeDictionary {
+    constructor( data) {this.data = data;}
+
+     isCommonForm(entryIndex, form) {
+      const normalized = normalizeLookupText(form);
+      const entry = this.data.entries[entryIndex];
+      return [...entry[1], ...entry[2]].some(
+        ([entryForm, common]) =>
+          common === 1 && normalizeLookupText(entryForm) === normalized,
+      );
+    }
+
+     matchesReading(entryIndex, reading) {
+      const normalized = normalizeLookupText(reading);
+      return this.data.entries[entryIndex][2].some(
+        ([entryReading]) => normalizeLookupText(entryReading) === normalized,
+      );
+    }
+
+     matchesPartOfSpeech(entryIndex, token) {
+      if (!token.pos) return true;
+      const dictionaryPos = new Set(
+        this.data.entries[entryIndex][3].flatMap(([partOfSpeech]) => partOfSpeech),
+      );
+      const has = (...values) => values.some(value => dictionaryPos.has(value));
+      const hasPrefix = (...prefixes) =>
+        [...dictionaryPos].some(value => prefixes.some(prefix => value.startsWith(prefix)));
+
+      if (token.pos === "動詞") return hasPrefix("v") || has("vs", "vk", "vz");
+      if (token.pos === "形容詞") return hasPrefix("adj-i", "adj-ix");
+      if (token.pos === "形状詞" || token.pos_detail_1 === "形容動詞語幹") {
+        return has("adj-na", "adj-t", "adj-nari");
+      }
+      if (token.pos === "副詞") return hasPrefix("adv");
+      if (token.pos === "助詞") return has("prt");
+      if (token.pos === "助動詞") return hasPrefix("aux") || has("cop");
+      if (token.pos === "接続詞") return has("conj");
+      if (token.pos === "連体詞") return has("adj-pn");
+      if (token.pos === "感動詞") return has("int");
+      if (token.pos === "接頭詞") return has("pref", "n-pref");
+      if (token.pos === "名詞") {
+        if (token.pos_detail_1 === "接尾") return has("suf", "n-suf");
+        return hasPrefix("n") || has("vs", "pron", "num", "ctr");
+      }
+      return true;
+    }
+
+     addCandidate(
+      candidates,
+      entryIndex,
+      score,
+      line,
+      matchedForm,
+      lookupForm,
+    ) {
+      const commonBonus = this.isCommonForm(entryIndex, lookupForm) ? 12 : 0;
+      let candidate = candidates.get(entryIndex);
+      if (!candidate) {
+        candidate = {
+          entryIndex,
+          score: score + commonBonus,
+          lines: new Set(),
+          matches: new Set(),
+        };
+        candidates.set(entryIndex, candidate);
+      } else {
+        candidate.score = Math.max(candidate.score, score + commonBonus);
+      }
+      candidate.lines.add(line);
+      if (matchedForm) candidate.matches.add(matchedForm);
+    }
+
+     addExactMatches(
+      candidates,
+      lookupForm,
+      matchedForm,
+      score,
+      line,
+      token,
+      matchReading = false,
+    ) {
+      if (!lookupForm || lookupForm === "*") return 0;
+      const normalized = normalizeLookupText(lookupForm);
+      let entries = this.data.lookup[normalized];
+      if (!entries) return 0;
+      if (matchReading && token?.reading) {
+        const readingMatches = entries.filter(entryIndex =>
+          this.matchesReading(entryIndex, token.reading),
+        );
+        if (readingMatches.length) entries = readingMatches;
+      }
+      if (token?.pos) {
+        const posMatches = entries.filter(entryIndex =>
+          this.matchesPartOfSpeech(entryIndex, token),
+        );
+        if (posMatches.length) entries = posMatches;
+      }
+      entries = [...entries].sort(
+        (left, right) =>
+          Number(this.isCommonForm(right, lookupForm)) -
+          Number(this.isCommonForm(left, lookupForm)),
+      );
+      for (const entryIndex of entries.slice(0, 12)) {
+        this.addCandidate(
+          candidates,
+          entryIndex,
+          score,
+          line,
+          matchedForm,
+          lookupForm,
+        );
+      }
+      return Math.min(entries.length, 12);
+    }
+
+    findCandidates(lines, tokenizer) {
+      const candidates = new Map();
+
+      lines.forEach((lineText, lineNumber) => {
+        const normalizedLine = normalizeLookupText(lineText);
+        for (let start = 0; start < normalizedLine.length; start++) {
+          const limit = Math.min(normalizedLine.length, start + MAX_SCAN_LENGTH);
+          for (let end = start; end < limit; end++) {
+            const matchedForm = normalizedLine.slice(start, end + 1);
+            const matchedEntries = this.data.lookup[matchedForm];
+            if (!matchedEntries) continue;
+            const length = end - start + 1;
+            if (length === 1 && !containsKanji(matchedForm)) continue;
+            const score = 25 + length * 6 + (containsKanji(matchedForm) ? 8 : 0);
+            // Kuromoji handles short words with reading/POS disambiguation. Keep the
+            // raw substring pass for longer compounds that the tokenizer may have split.
+            if (tokenizer && score < 45) continue;
+            for (const entryIndex of matchedEntries.slice(0, 12)) {
+              this.addCandidate(
+                candidates,
+                entryIndex,
+                score,
+                lineNumber,
+                matchedForm,
+                matchedForm,
+              );
+            }
+          }
+        }
+
+        if (tokenizer) {
+          for (const token of tokenizer.tokenize(lineText)) {
+            const surface = token.surface_form;
+            let directMatches = this.addExactMatches(
+              candidates,
+              surface,
+              surface,
+              90,
+              lineNumber,
+              token,
+              true,
+            );
+            if (token.basic_form && token.basic_form !== surface) {
+              directMatches += this.addExactMatches(
+                candidates,
+                token.basic_form,
+                surface,
+                115,
+                lineNumber,
+                token,
+              );
+            }
+            if (!directMatches && token.reading) {
+              this.addExactMatches(
+                candidates,
+                token.reading,
+                surface,
+                65,
+                lineNumber,
+                token,
+                true,
+              );
+            }
+          }
+        }
+      });
+
+      return [...candidates.values()]
+        .map(candidate => ({
+          ...candidate,
+          score: candidate.score + Math.min(candidate.lines.size, 6) * 3,
+        }))
+        .sort((left, right) => right.score - left.score)
+        .slice(0, MAX_DICTIONARY_REFERENCES);
+    }
+
+    formatCandidate(candidate) {
+      const entry = this.data.entries[candidate.entryIndex];
+      const preferredKanji = entry[1].find(([, common]) => common)?.[0] || entry[1][0]?.[0];
+      const preferredKana = entry[2].find(([, common]) => common)?.[0] || entry[2][0]?.[0];
+      const headword = preferredKanji || preferredKana || "";
+
+      const meanings = [];
+      const partOfSpeech = new Set();
+      for (const [pos, glosses] of entry[3]) {
+        pos.forEach(value => partOfSpeech.add(value));
+        for (const gloss of glosses) {
+          if (!meanings.includes(gloss)) meanings.push(gloss);
+          if (meanings.length >= 6) break;
+        }
+        if (meanings.length >= 6) break;
+      }
+
+      const posDescriptions = [...partOfSpeech]
+        .slice(0, 3)
+        .map(pos => this.data.partOfSpeech[pos] || pos);
+      const matchedForms = [...candidate.matches]
+        .filter(match => normalizeLookupText(match) !== normalizeLookupText(headword))
+        .slice(0, 3);
+      const lineNumbers = [...candidate.lines].sort((a, b) => a - b).slice(0, 8);
+
+      const fields = [
+        `lines ${lineNumbers.join(",")}`,
+        `word=${headword}`,
+        preferredKana && preferredKana !== headword ? `reading=${preferredKana}` : "",
+        matchedForms.length ? `matched=${matchedForms.join("/")}` : "",
+        posDescriptions.length ? `pos=${posDescriptions.join("; ")}` : "",
+        `meaning=${meanings.join("; ")}`,
+      ].filter(Boolean);
+      return `- ${fields.join(" | ")}`;
+    }
+  }
+
+  let dictionaryPromise;
+  let tokenizerPromise;
+
+  async function loadDictionary() {
+    if (!dictionaryPromise) {
+      dictionaryPromise = (async () => {
+        const response = await withTimeout(
+          fetch(JMDICT_URL),
+          20000,
+          "Timed out while loading JMdict references",
+        );
+        if (!response.ok) {
+          throw new Error(`Dictionary request failed: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json() ;
+        if (data.format !== 2 || !data.lookup || !Array.isArray(data.entries)) {
+          throw new Error("Unsupported lyrics dictionary format");
+        }
+        return new RuntimeDictionary(data);
+      })();
+    }
+    return dictionaryPromise;
+  }
+
+  function loadScript(url) {
+    const global = globalThis ;
+    if (global.kuromoji) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${url}"]`) ;
+      const script = existing || document.createElement("script");
+      const onLoad = () => global.kuromoji
+        ? resolve()
+        : reject(new Error("kuromoji.js did not expose its browser API"));
+      const onError = () => reject(new Error("Failed to load kuromoji.js"));
+      script.addEventListener("load", onLoad, { once: true });
+      script.addEventListener("error", onError, { once: true });
+      if (!existing) {
+        script.src = url;
+        script.async = true;
+        document.head.appendChild(script);
+      }
+    });
+  }
+
+  async function loadTokenizer() {
+    if (!tokenizerPromise) {
+      tokenizerPromise = (async () => {
+        await withTimeout(
+          loadScript(KUROMOJI_SCRIPT_URL),
+          20000,
+          "Timed out while loading kuromoji.js",
+        );
+        const kuromoji = (globalThis ).kuromoji;
+        return await withTimeout(
+          new Promise((resolve, reject) => {
+            kuromoji.builder({ dicPath: KUROMOJI_DICTIONARY_URL }).build(
+              (error, tokenizer) => {
+                if (error) reject(error);
+                else resolve(tokenizer);
+              },
+            );
+          }),
+          60000,
+          "Timed out while loading the kuromoji dictionary",
+        );
+      })();
+    }
+    return tokenizerPromise;
+  }
+
+  async function buildDictionaryReferences(lines) {
+    if (!lines.some(line => /[々〆ヶぁ-んァ-ヶ一-龯]/.test(line))) return "";
+
+    let dictionary;
+    try {
+      dictionary = await loadDictionary();
+    } catch (error) {
+      console.warn("[Lyrics Explains] Failed to load JMdict references:", error);
+      return "";
+    }
+
+    let tokenizer = null;
+    try {
+      tokenizer = await loadTokenizer();
+    } catch (error) {
+      console.warn("[Lyrics Explains] Failed to load kuromoji; using dictionary scanning only:", error);
+    }
+
+    const candidates = dictionary.findCandidates(lines, tokenizer);
+    const formatted = [];
+    let characterCount = 0;
+    for (const candidate of candidates) {
+      const line = dictionary.formatCandidate(candidate);
+      if (characterCount + line.length > MAX_REFERENCE_CHARACTERS) break;
+      formatted.push(line);
+      characterCount += line.length + 1;
+    }
+    if (!formatted.length) return "";
+
+    return `
+Automatically matched JMdict references are listed below. They are candidates,
+not authoritative segmentation: ignore false matches and select meanings by lyric context.
+Do not copy a meaning when it conflicts with the line.
+${formatted.join("\n")}
+`;
+  }
+
   // --- Plugin Registration ---
   mcloud.plugins.registerPlugin({
     name: "Lyrics Explains",
-    description: "Generates line-by-line explanations for lyrics using Gemini or OpenAI Chat Completions APIs.",
-    version: "0.2.0",
+    description: "Generates line-by-line explanations with Gemini or OpenAI APIs and local JMdict references.",
+    version: "0.3.0",
     website: "",
     settings: () => openSettingsDialog(),
   });
@@ -181,21 +597,37 @@
     throw new Error("Unexpected response structure from OpenAI Chat Completions API.");
   }
 
-  async function callAI(prompt) {
-    const config = normalizeConfig(await configStore.get());
+  function ensureApiConfigured(config) {
     if (!config.apiKey) {
       mcloud.Toast.show(webfx.I`API Key is not configured for Lyrics Explains plugin.`, 3000);
       throw new Error("API Key not configured.");
     }
+  }
+
+  async function callAI(
+    prompt,
+    config,
+  ) {
     return config.provider === "openai"
       ? callOpenAI(prompt, config)
       : callGemini(prompt, config);
   }
 
   // --- Prompt Construction ---
-  function buildPrompt(lyrics, customPrompt) {
+  function getUniqueLyricsLines(lyrics) {
     // Split lyrics into lines and add line numbers for the input format
-    const lines = [...new Set(lyrics.lines.map(line => line.spans?.map(x => x.text).join('').trim()).filter(line => line))] ; // Unique, non-empty lines
+    return [...new Set(
+      lyrics.lines
+        .map(line => line.spans?.map(x => x.text).join('').trim())
+        .filter(line => line),
+    )] ;
+  }
+
+  function buildPrompt(
+    lines,
+    customPrompt,
+    dictionaryReferences,
+  ) {
     const numberedLines = lines
       .map((line, index) => `line ${index}: ${line}`)
       .join('\n');
@@ -235,12 +667,13 @@ Example Output JSON:
   ]
 }
 User's Additional Instructions:${customPrompt ? `\n${customPrompt}\n` : ' not provided.'}
-Now analyze these lyrics based *only* on the provided input lines. Ensure the output is a single, valid JSON object starting with { and ending with }:
+${dictionaryReferences || ""}
+Now analyze these lyrics using the input lines and only the relevant dictionary references above. Ensure the output is a single, valid JSON object starting with { and ending with }:
 ---
 ${numberedLines}
 ---
 `;
-    return { prompt, lines };
+    return prompt;
   }
 
   // --- Response Parsing ---
@@ -320,8 +753,11 @@ ${numberedLines}
               const parsed = mcloud.Lyrics.parse(lyricsText);
 
               const config = normalizeConfig(await configStore.get());
-              const { prompt, lines } = buildPrompt(parsed, config.customPrompt);
-              const aiResponse = await callAI(prompt);
+              ensureApiConfigured(config);
+              const lines = getUniqueLyricsLines(parsed);
+              const dictionaryReferences = await buildDictionaryReferences(lines);
+              const prompt = buildPrompt(lines, config.customPrompt, dictionaryReferences);
+              const aiResponse = await callAI(prompt, config);
               const parsedExplanations = parseAIResponse(aiResponse, lines);
 
               if (!parsedExplanations || Object.keys(parsedExplanations).length === 0) {
