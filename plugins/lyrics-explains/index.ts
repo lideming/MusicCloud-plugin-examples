@@ -28,7 +28,7 @@ import { buildDictionaryReferences } from "./dictionary";
 plugins.registerPlugin({
   name: "Lyrics Explains",
   description: "Generates line-by-line explanations with Gemini or OpenAI APIs and local JMdict references.",
-  version: "0.3.0",
+  version: "0.3.1",
   website: "",
   settings: () => openSettingsDialog(),
 });

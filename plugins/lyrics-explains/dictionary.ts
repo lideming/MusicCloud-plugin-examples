@@ -38,10 +38,6 @@ interface KuromojiToken {
   pos_detail_1?: string;
 }
 
-interface KuromojiTokenizer {
-  tokenize(text: string): KuromojiToken[];
-}
-
 interface Candidate {
   entryIndex: number;
   score: number;
@@ -194,7 +190,10 @@ class RuntimeDictionary {
     return Math.min(entries.length, 12);
   }
 
-  findCandidates(lines: string[], tokenizer: KuromojiTokenizer | null): Candidate[] {
+  findCandidates(
+    lines: string[],
+    tokenizedLines: KuromojiToken[][] | null,
+  ): Candidate[] {
     const candidates = new Map<number, Candidate>();
 
     lines.forEach((lineText, lineNumber) => {
@@ -210,7 +209,7 @@ class RuntimeDictionary {
           const score = 25 + length * 6 + (containsKanji(matchedForm) ? 8 : 0);
           // Kuromoji handles short words with reading/POS disambiguation. Keep the
           // raw substring pass for longer compounds that the tokenizer may have split.
-          if (tokenizer && score < 45) continue;
+          if (tokenizedLines && score < 45) continue;
           for (const entryIndex of matchedEntries.slice(0, 12)) {
             this.addCandidate(
               candidates,
@@ -224,8 +223,9 @@ class RuntimeDictionary {
         }
       }
 
-      if (tokenizer) {
-        for (const token of tokenizer.tokenize(lineText)) {
+      const tokens = tokenizedLines?.[lineNumber];
+      if (tokens) {
+        for (const token of tokens) {
           const surface = token.surface_form;
           let directMatches = this.addExactMatches(
             candidates,
@@ -308,7 +308,6 @@ class RuntimeDictionary {
 }
 
 let dictionaryPromise: Promise<RuntimeDictionary> | undefined;
-let tokenizerPromise: Promise<KuromojiTokenizer> | undefined;
 
 async function loadDictionary(): Promise<RuntimeDictionary> {
   if (!dictionaryPromise) {
@@ -331,50 +330,148 @@ async function loadDictionary(): Promise<RuntimeDictionary> {
   return dictionaryPromise;
 }
 
-function loadScript(url: string): Promise<void> {
-  const global = globalThis as any;
-  if (global.kuromoji) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${url}"]`) as HTMLScriptElement | null;
-    const script = existing || document.createElement("script");
-    const onLoad = () => global.kuromoji
-      ? resolve()
-      : reject(new Error("kuromoji.js did not expose its browser API"));
-    const onError = () => reject(new Error("Failed to load kuromoji.js"));
-    script.addEventListener("load", onLoad, { once: true });
-    script.addEventListener("error", onError, { once: true });
-    if (!existing) {
-      script.src = url;
-      script.async = true;
-      document.head.appendChild(script);
-    }
-  });
+interface WorkerRequest {
+  id: number;
+  lines: string[];
 }
 
-async function loadTokenizer(): Promise<KuromojiTokenizer> {
+interface WorkerResponse {
+  id: number;
+  tokens?: KuromojiToken[][];
+  error?: string;
+}
+
+interface PendingWorkerRequest {
+  resolve: (tokens: KuromojiToken[][]) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+interface TokenizerWorkerState {
+  worker: Worker;
+  pending: Map<number, PendingWorkerRequest>;
+}
+
+let tokenizerWorkerState: TokenizerWorkerState | undefined;
+let tokenizerRequestId = 0;
+
+function tokenizerWorkerSource(): string {
+  return `
+const KUROMOJI_SCRIPT_URL = ${JSON.stringify(KUROMOJI_SCRIPT_URL)};
+const KUROMOJI_DICTIONARY_URL = ${JSON.stringify(KUROMOJI_DICTIONARY_URL)};
+const VIRTUAL_DICTIONARY_PATH = "/__lyrics_kuromoji__/";
+
+let tokenizerPromise;
+
+function getTokenizer() {
   if (!tokenizerPromise) {
-    tokenizerPromise = (async () => {
-      await withTimeout(
-        loadScript(KUROMOJI_SCRIPT_URL),
-        20000,
-        "Timed out while loading kuromoji.js",
-      );
-      const kuromoji = (globalThis as any).kuromoji;
-      return await withTimeout(
-        new Promise<KuromojiTokenizer>((resolve, reject) => {
-          kuromoji.builder({ dicPath: KUROMOJI_DICTIONARY_URL }).build(
-            (error: Error | null, tokenizer: KuromojiTokenizer) => {
-              if (error) reject(error);
-              else resolve(tokenizer);
-            },
-          );
-        }),
-        60000,
-        "Timed out while loading the kuromoji dictionary",
-      );
-    })();
+    tokenizerPromise = new Promise((resolve, reject) => {
+      try {
+        importScripts(KUROMOJI_SCRIPT_URL);
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url, ...args) {
+          if (typeof url === "string") {
+            const markerIndex = url.indexOf(VIRTUAL_DICTIONARY_PATH);
+            if (markerIndex >= 0) {
+              url = KUROMOJI_DICTIONARY_URL +
+                url.slice(markerIndex + VIRTUAL_DICTIONARY_PATH.length);
+            }
+          }
+          return originalOpen.call(this, method, url, ...args);
+        };
+        self.kuromoji.builder({ dicPath: VIRTUAL_DICTIONARY_PATH }).build(
+          (error, tokenizer) => error ? reject(error) : resolve(tokenizer),
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
   return tokenizerPromise;
+}
+
+self.onmessage = async event => {
+  const { id, lines } = event.data;
+  try {
+    const tokenizer = await getTokenizer();
+    const tokens = lines.map(line => tokenizer.tokenize(line).map(token => ({
+      surface_form: token.surface_form,
+      basic_form: token.basic_form,
+      reading: token.reading,
+      pos: token.pos,
+      pos_detail_1: token.pos_detail_1,
+    })));
+    self.postMessage({ id, tokens });
+  } catch (error) {
+    self.postMessage({
+      id,
+      error: error && (error.stack || error.message) || String(error),
+    });
+  }
+};
+`;
+}
+
+function terminateTokenizerWorker(error: Error) {
+  const state = tokenizerWorkerState;
+  tokenizerWorkerState = undefined;
+  if (!state) return;
+  state.worker.terminate();
+  for (const request of state.pending.values()) {
+    clearTimeout(request.timer);
+    request.reject(error);
+  }
+  state.pending.clear();
+}
+
+function getTokenizerWorker(): TokenizerWorkerState {
+  if (tokenizerWorkerState) return tokenizerWorkerState;
+  if (typeof Worker === "undefined") {
+    throw new Error("Web Workers are not available");
+  }
+
+  const blobUrl = URL.createObjectURL(
+    new Blob([tokenizerWorkerSource()], { type: "text/javascript" }),
+  );
+  const worker = new Worker(blobUrl);
+  URL.revokeObjectURL(blobUrl);
+  const state: TokenizerWorkerState = {
+    worker,
+    pending: new Map(),
+  };
+  tokenizerWorkerState = state;
+
+  worker.onmessage = event => {
+    const response = event.data as WorkerResponse;
+    const request = state.pending.get(response.id);
+    if (!request) return;
+    state.pending.delete(response.id);
+    clearTimeout(request.timer);
+    if (response.error) request.reject(new Error(response.error));
+    else request.resolve(response.tokens || []);
+  };
+  worker.onerror = event => {
+    terminateTokenizerWorker(new Error(event.message || "Kuromoji worker failed"));
+  };
+  worker.onmessageerror = () => {
+    terminateTokenizerWorker(new Error("Failed to read the Kuromoji worker response"));
+  };
+  return state;
+}
+
+function tokenizeLines(lines: string[]): Promise<KuromojiToken[][]> {
+  const state = getTokenizerWorker();
+  const id = ++tokenizerRequestId;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (!state.pending.delete(id)) return;
+      const error = new Error("Timed out while loading or running Kuromoji");
+      reject(error);
+      terminateTokenizerWorker(error);
+    }, 60000);
+    state.pending.set(id, { resolve, reject, timer });
+    state.worker.postMessage({ id, lines } satisfies WorkerRequest);
+  });
 }
 
 export async function buildDictionaryReferences(lines: string[]): Promise<string> {
@@ -388,14 +485,14 @@ export async function buildDictionaryReferences(lines: string[]): Promise<string
     return "";
   }
 
-  let tokenizer: KuromojiTokenizer | null = null;
+  let tokenizedLines: KuromojiToken[][] | null = null;
   try {
-    tokenizer = await loadTokenizer();
+    tokenizedLines = await tokenizeLines(lines);
   } catch (error) {
     console.warn("[Lyrics Explains] Failed to load kuromoji; using dictionary scanning only:", error);
   }
 
-  const candidates = dictionary.findCandidates(lines, tokenizer);
+  const candidates = dictionary.findCandidates(lines, tokenizedLines);
   const formatted: string[] = [];
   let characterCount = 0;
   for (const candidate of candidates) {
